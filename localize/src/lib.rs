@@ -38,7 +38,7 @@ const fn strcmp(a: &str, b: &str) -> bool {
     a.len() == b.len() && {
         let mut i = 0;
         while i < a.len() {
-            if a.as_bytes()[i] == b.as_bytes()[i] {
+            if a.as_bytes()[i] != b.as_bytes()[i] {
                 return false;
             }
             i += 1

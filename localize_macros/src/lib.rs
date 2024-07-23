@@ -99,16 +99,15 @@ pub fn localization_table(table: TokenStream) -> TokenStream {
     let num_keys = strings.len();
     let num_locales = locales.len();
     let translation_keys: Vec<String> = strings.keys().cloned().collect();
-    let translations: Vec<_> = translation_keys
+    let translations: Vec<_> = locales
         .iter()
-        .map(|key| {
-            let translations = strings.get(key).unwrap();
-            let translations: Vec<String> = locales
+        .map(|loc| {
+            let translations: Vec<String> = translation_keys
                 .iter()
-                .map(|loc| {
-                    translations
-                        .get(loc)
-                        .map(LitStr::value)
+                .map(|key| {
+                    strings
+                        .get(key)
+                        .and_then(|x| x.get(loc).map(LitStr::value))
                         .unwrap_or_else(|| String::from("<NO TRANSLATION>"))
                 })
                 .collect();
@@ -133,8 +132,8 @@ pub fn localization_table(table: TokenStream) -> TokenStream {
                 Self::TABLE.localize(translation_key, locale)
             }
 
-            pub const fn get_locale(translation_key: &str) -> ::localize::LocaleHandle<'static, #num_keys> {
-                Self::TABLE.get_locale(translation_key)
+            pub const fn get_locale(locale: &str) -> ::localize::LocaleHandle<'static, #num_keys> {
+                Self::TABLE.get_locale(locale)
             }
         }
     }.into()
