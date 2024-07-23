@@ -1,6 +1,41 @@
 #![warn(clippy::pedantic, clippy::nursery)]
+use std::fmt::Display;
+
 pub use localize_macros::localization_table;
 
+/// A table of translations based on locale.
+///
+/// The best way to generate this struct is through the `localization_table` macro,
+/// which provides a simple syntax and guarantees that the translation keys and locales are formatted properly.
+/// # Example
+///
+/// ```
+/// # use localize::{localization_table, LocalizationTable};
+///
+///  localization_table!{Spanglish = LDSL {
+///     "greeting" = {
+///         en => "Hello",
+///         es => "Hola"
+///     },
+///     "farewell" = {
+///         en => "Goodbye",
+///         es => "Adiós"
+///     }
+///  }}
+///  let spanglish: LocalizationTable<'static, 2, 2> = Spanglish::TABLE;
+///
+/// let greeting_en = spanglish.localize("greeting", "en");
+/// assert_eq!(greeting_en, "Hello");
+///
+/// let greeting_es = spanglish.localize("greeting", "es");
+/// assert_eq!(greeting_es, "Hola");
+///
+/// let farewell_en = spanglish.localize("farewell", "en");
+/// assert_eq!(farewell_en, "Goodbye");
+///
+/// let farewell_es = spanglish.localize("farewell", "es");
+/// assert_eq!(farewell_es, "Adiós");
+/// ```
 #[derive(Clone, Copy)]
 pub struct LocalizationTable<'a, const LOCALES: usize, const KEYS: usize> {
     pub translation_keys: [&'a str; KEYS],
@@ -24,7 +59,7 @@ impl<'a, const LOCALES: usize, const KEYS: usize> LocalizationTable<'a, LOCALES,
     /// - If the translation is not available for the specified locale and the default locale,
     ///   an empty string is returned.
     ///
-    /// # Examples
+    /// # Example
     ///
     /// ```
     /// # use localize::localization_table;
@@ -58,23 +93,80 @@ impl<'a, const LOCALES: usize, const KEYS: usize> LocalizationTable<'a, LOCALES,
             [find_idx(&self.translation_keys, translation_key)]
     }
 
+    /// Create a reference to the specified locale
+    /// # Example
+    /// ```
+    /// # use localize::{localization_table, LocaleHandle};
+    ///
+    /// localization_table!{Spanglish = LDSL {
+    ///    "greeting" = {
+    ///        en => "Hello",
+    ///        es => "Hola"
+    ///    },
+    ///    "farewell" = {
+    ///        en => "Goodbye",
+    ///        es => "Adiós"
+    ///    }
+    /// }}
+    ///
+    /// let spanish = Spanglish::get_locale("es");
+    /// assert_eq!(spanish.localize("greeting"), "Hola");
+    ///
+    /// let english = Spanglish::get_locale("en");
+    /// assert_eq!(english.localize("greeting"), "Hello");
+    /// ```
     #[inline]
     #[must_use]
     pub const fn get_locale(&'a self, locale: &str) -> LocaleHandle<'a, KEYS> {
+        let idx = find_idx(&self.locales, locale);
         LocaleHandle {
+            locale: self.locales[idx],
             translation_keys: &self.translation_keys,
-            translations: &self.translations[find_idx(&self.translation_keys, locale)],
+            translations: &self.translations[idx],
         }
     }
 }
 
+/// A reference to a specific row of a translation table.
+///
+/// # Example
+/// ```
+/// # use localize::{localization_table, LocaleHandle};
+///
+/// localization_table!{Spanglish = LDSL {
+///    "greeting" = {
+///        en => "Hello",
+///        es => "Hola"
+///    },
+///    "farewell" = {
+///        en => "Goodbye",
+///        es => "Adiós"
+///    }
+/// }}
+///
+/// let spanish: LocaleHandle<'static, 2> = Spanglish::get_locale("es");
+/// assert_eq!(spanish.localize("greeting"), "Hola");
+/// assert_eq!(format!("{spanish}"), "es");
+///
+/// let english: LocaleHandle<'static, 2> = Spanglish::get_locale("en");
+/// assert_eq!(english.localize("greeting"), "Hello");
+/// assert_eq!(format!("{english}"), "en");
+/// ```
 #[derive(Clone, Copy)]
 pub struct LocaleHandle<'a, const KEYS: usize> {
+    locale: &'a str,
     translation_keys: &'a [&'a str; KEYS],
     translations: &'a [&'a str; KEYS],
 }
 
+impl<'a, const KEYS: usize> Display for LocaleHandle<'a, KEYS> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.locale)
+    }
+}
+
 impl<'a, const KEYS: usize> LocaleHandle<'a, KEYS> {
+    /// Get the translated string for the given translation key in this locale
     #[inline]
     #[must_use]
     pub const fn localize(&self, translation_key: &str) -> &'a str {
@@ -82,6 +174,7 @@ impl<'a, const KEYS: usize> LocaleHandle<'a, KEYS> {
     }
 }
 
+#[inline]
 const fn strcmp(a: &str, b: &str) -> bool {
     a.len() == b.len() && {
         let mut i = 0;
