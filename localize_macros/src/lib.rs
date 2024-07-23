@@ -1,14 +1,11 @@
-use proc_macro::{Literal, TokenStream, TokenTree};
+#![warn(clippy::pedantic, clippy::nursery)]
+
+use proc_macro::TokenStream;
 use quote::quote;
-use std::{
-    collections::{HashMap, HashSet},
-    fs::{self, File},
-    io::Write,
-    path::PathBuf,
-};
+use std::collections::{HashMap, HashSet};
 use syn::{
     ext::IdentExt,
-    parse::{Parse, ParseBuffer, ParseStream},
+    parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
     Ident, LitStr, Result, Token,
@@ -20,12 +17,12 @@ struct TranslationInput {
     locales: HashSet<Ident>,
 }
 
-struct TranslationItem {
+struct LDSLTranslationItem {
     key: LitStr,
-    values: Punctuated<TranslationValue, Token![,]>,
+    values: Punctuated<LDSLTranslationValue, Token![,]>,
 }
 
-struct TranslationValue {
+struct LDSLTranslationValue {
     locale: Ident,
     value: LitStr,
 }
@@ -37,7 +34,9 @@ impl Parse for TranslationInput {
         let syntax_type: Ident = input.parse()?;
         match &*syntax_type.to_string() {
             "LDSL" => {
-                let translations = input.parse_terminated(TranslationItem::parse, Token![,])?;
+                let body;
+                syn::braced!(body in input);
+                let translations = body.parse_terminated(LDSLTranslationItem::parse, Token![,])?;
                 let mut strings: HashMap<String, HashMap<Ident, LitStr>> = HashMap::new();
                 let mut locales: HashSet<Ident> = HashSet::new();
                 for item in translations {
@@ -58,7 +57,7 @@ impl Parse for TranslationInput {
                     strings.insert(key, current_string);
                 }
 
-                Ok(TranslationInput {
+                Ok(Self {
                     struct_name,
                     strings,
                     locales,
@@ -69,26 +68,89 @@ impl Parse for TranslationInput {
     }
 }
 
-impl Parse for TranslationItem {
+impl Parse for LDSLTranslationItem {
     fn parse(input: ParseStream) -> Result<Self> {
         let key: LitStr = input.parse()?;
+        let _: Token![=] = input.parse()?;
         let content;
         syn::braced!(content in input);
-        let values = content.parse_terminated(TranslationValue::parse, Token![,])?;
-        Ok(TranslationItem { key, values })
+        let values = content.parse_terminated(LDSLTranslationValue::parse, Token![,])?;
+        Ok(Self { key, values })
     }
 }
 
-impl Parse for TranslationValue {
+impl Parse for LDSLTranslationValue {
     fn parse(input: ParseStream) -> Result<Self> {
         let locale: Ident = input.parse()?;
         let _: Token![=>] = input.parse()?;
         let value: LitStr = input.parse()?;
-        Ok(TranslationValue { locale, value })
+        Ok(Self { locale, value })
     }
 }
 
 #[proc_macro]
+/// Generates a `LocalizationTabe` struct from a custom set of translations.
+///
+/// # Syntax
+///
+/// The macro invocation always starts with an identifier for the translation table, an equals sign,
+/// and an identifier for the translation syntax to use. Currently, the only supported syntax is LDSL, described below.
+///
+/// ## LDSL (Localization Domain-Specific Language)
+///
+/// ```
+/// # use localize_macros::localization_table;
+///
+/// localization_table! {MyLocalizationTable = LDSL {
+///     "key1" = {
+///         locale1 => "translation1",
+///         locale2 => "translation2",
+///     },
+///     "key2" = {
+///         locale1 => "translation3",
+///         locale2 => "translation4",
+///     }
+/// }}
+/// ```
+///
+/// The DSL allows you to specify translation keys and their corresponding translations
+/// for different locales in a structured and readable format.
+///
+/// - Each translation key is a string literal.
+/// - Each locale is an identifier followed by `=>` and a string literal representing the translation.
+///
+/// # Example
+///
+/// ```
+/// # use localize_macros::localization_table;
+///
+/// localization_table! {Spanglish = LDSL {
+///     "greeting" = {
+///         en => "Hello",
+///         es => "Hola",
+///     },
+///     "farewell" = {
+///         en => "Goodbye",
+///         es => "Adiós",
+///     }
+/// }}
+///
+/// let greeting_en = Spanglish::localize("greeting", "en");
+/// assert_eq!(greeting_en, "Hello");
+///
+/// let greeting_es = Spanglish::localize("greeting", "es");
+/// assert_eq!(greeting_es, "Hola");
+///
+/// let farewell_en = Spanglish::localize("farewell", "en");
+/// assert_eq!(farewell_en, "Goodbye");
+///
+/// let farewell_es = Spanglish::localize("farewell", "es");
+/// assert_eq!(farewell_es, "Adiós");
+/// ```
+///
+/// # Errors
+///
+/// - If the macro input is not well-formed, a compile-time error will be generated.
 pub fn localization_table(table: TokenStream) -> TokenStream {
     let TranslationInput {
         struct_name,

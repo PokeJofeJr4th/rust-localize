@@ -1,15 +1,15 @@
-use localize_macros::localization_table;
+use localize::localization_table;
 
-localization_table! {Spanglish = LDSL
-    "greeting" {
+localization_table! {Spanglish = LDSL {
+    "greeting" = {
         en => "Hello",
         es => "Hola"
     },
-    "farewell" {
+    "farewell" = {
         en => "Goodbye",
-        es => "Adios"
+        es => "Adiós"
     }
-}
+}}
 
 fn main() {
     println!(
