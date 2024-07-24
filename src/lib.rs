@@ -1,7 +1,46 @@
-#![warn(clippy::pedantic, clippy::nursery)]
-use std::fmt::Display;
+//! # Localize
+//! A crate for creating localization tables for static strings. The core data model for this crate is as follows.
+//! See other sections of the documentation for more information about how to use specific features.
+//!
+//! * A **translation key** is a string literal that uniquely identifies a translation string.
+//!   * The special translation key `"_"` creates a default translation to be used when a translation isn't specified.
+//! * A **locale** is an identifier, often two letters long, that uniquely identifies a set of strings that the
+//!   table should be able to switch between.
+//! * A **translation** is a user-facing string literal corresponding to a given translation key and locale.
+//!
+//! # Example
+//! This example shows one very simple use of `localize`. For more examples, see the relevant macro, struct,
+//! and function documentation.
+//! ```
+//! use localize::{localization_table, LocalizationTable};
+//!
+//! localization_table!{Spanglish = LDSL {
+//!     "greeting" = {
+//!         en => "Hello",
+//!         es => "Hola"
+//!     },
+//!     "farewell" = {
+//!         en => "Goodbye",
+//!         es => "Adiós"
+//!     }
+//! }}
+//!
+//! let greeting_en = Spanglish::localize("greeting", "en");
+//! assert_eq!(greeting_en, "Hello");
+//!
+//! let greeting_es = Spanglish::localize("greeting", "es");
+//! assert_eq!(greeting_es, "Hola");
+//!
+//! let farewell_en = Spanglish::localize("farewell", "en");
+//! assert_eq!(farewell_en, "Goodbye");
+//!
+//! let farewell_es = Spanglish::localize("farewell", "es");
+//! assert_eq!(farewell_es, "Adiós");
+//! ```
 
+#![warn(clippy::pedantic, clippy::nursery)]
 pub use localize_macros::localization_table;
+use std::fmt::Display;
 
 /// A table of translations based on locale.
 ///
@@ -12,17 +51,19 @@ pub use localize_macros::localization_table;
 /// ```
 /// # use localize::{localization_table, LocalizationTable};
 ///
-///  localization_table!{Spanglish = LDSL {
-///     "greeting" = {
-///         en => "Hello",
-///         es => "Hola"
-///     },
-///     "farewell" = {
-///         en => "Goodbye",
-///         es => "Adiós"
-///     }
-///  }}
-///  let spanglish: LocalizationTable<'static, 2, 2> = Spanglish::TABLE;
+/// # localization_table!{Spanglish = LDSL {
+/// #    "greeting" = {
+/// #        en => "Hello",
+/// #        es => "Hola"
+/// #    },
+/// #    "farewell" = {
+/// #        en => "Goodbye",
+/// #        es => "Adiós"
+/// #    }
+/// # }}
+/// let spanglish: LocalizationTable<'static, 2, 2>;
+/// // ...
+/// # spanglish = Spanglish::TABLE;
 ///
 /// let greeting_en = spanglish.localize("greeting", "en");
 /// assert_eq!(greeting_en, "Hello");

@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use proc_macro::TokenStream;
+use proc_macro::{Span, TokenStream};
 use quote::quote;
 use std::collections::{HashMap, HashSet};
 use syn::{
@@ -17,8 +17,32 @@ struct TranslationInput {
     locales: HashSet<Ident>,
 }
 
+enum StrOrIdent {
+    Str(LitStr),
+    Ident(Ident),
+}
+
+impl StrOrIdent {
+    pub fn value(&self) -> String {
+        match self {
+            Self::Str(l) => l.value(),
+            Self::Ident(i) => i.unraw().to_string(),
+        }
+    }
+}
+
+impl Parse for StrOrIdent {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if let Ok(s) = input.parse() {
+            Ok(Self::Str(s))
+        } else {
+            input.parse().map(Self::Ident)
+        }
+    }
+}
+
 struct LDSLTranslationItem {
-    key: LitStr,
+    key: StrOrIdent,
     values: Punctuated<LDSLTranslationValue, Token![,]>,
 }
 
@@ -70,7 +94,7 @@ impl Parse for TranslationInput {
 
 impl Parse for LDSLTranslationItem {
     fn parse(input: ParseStream) -> Result<Self> {
-        let key: LitStr = input.parse()?;
+        let key = input.parse()?;
         let _: Token![=] = input.parse()?;
         let content;
         syn::braced!(content in input);
@@ -94,7 +118,8 @@ impl Parse for LDSLTranslationValue {
 /// # Syntax
 ///
 /// The macro invocation always starts with an identifier for the translation table, an equals sign,
-/// and an identifier for the translation syntax to use. Currently, the only supported syntax is LDSL, described below.
+/// and an identifier corresponding to the translation syntax to use. Currently, the only supported
+/// syntax is LDSL, described below.
 ///
 /// ## LDSL (Localization Domain-Specific Language)
 ///
@@ -147,38 +172,51 @@ impl Parse for LDSLTranslationValue {
 /// let farewell_es = Spanglish::localize("farewell", "es");
 /// assert_eq!(farewell_es, "Adiós");
 /// ```
-///
-/// # Errors
-///
-/// - If the macro input is not well-formed, a compile-time error will be generated.
 pub fn localization_table(table: TokenStream) -> TokenStream {
     let TranslationInput {
         struct_name,
         strings,
         locales,
     } = parse_macro_input!(table as TranslationInput);
-    let locales: Vec<_> = locales.into_iter().collect();
-    let num_keys = strings.len();
+    let mut locales = locales.into_iter().collect::<Vec<_>>();
+    locales.sort();
+    let locales = locales;
+    let mut translation_keys: Vec<String> = strings.keys().cloned().collect();
+    translation_keys.sort();
+    let translation_keys = translation_keys;
+
+    let num_keys = translation_keys.len();
     let num_locales = locales.len();
-    let translation_keys: Vec<String> = strings.keys().cloned().collect();
     let translations: Vec<_> = locales
+        // loop through each locale
         .iter()
         .map(|loc| {
-            let translations: Vec<String> = translation_keys
+            // loop through each translation key
+            let translations: Vec<LitStr> = translation_keys
                 .iter()
                 .map(|key| {
+                    // get the map of locale to translation for this key
                     strings
                         .get(key)
-                        .and_then(|x| x.get(loc).map(LitStr::value))
-                        .unwrap_or_else(|| String::from("<NO TRANSLATION>"))
+                        .and_then(|x| {
+                            // get the translation for this locale
+                            x.get(loc)
+                        })
+                        // but if it's not there, get the special "_" key
+                        .or_else(|| strings.get("_")?.get(loc))
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            LitStr::new("<NO TRANSLATION>", Span::call_site().into())
+                        })
                 })
                 .collect();
             quote! {[#(#translations),*]}
         })
         .collect();
-    let locales: Vec<String> = locales
-        .into_iter()
-        .map(|id: Ident| id.to_string())
+    let locale_strs: Vec<String> = locales.iter().map(Ident::to_string).collect();
+    let locales_upper: Vec<Ident> = locales
+        .iter()
+        .map(|loc| Ident::new(&loc.to_string().to_uppercase(), loc.span()))
         .collect();
     quote! {
         pub struct #struct_name;
@@ -186,17 +224,23 @@ pub fn localization_table(table: TokenStream) -> TokenStream {
         impl #struct_name {
             pub const TABLE: ::localize::LocalizationTable<'static, #num_locales, #num_keys> = ::localize::LocalizationTable {
                 translation_keys: [#(#translation_keys),*],
-                locales: [#(#locales),*],
+                locales: [#(#locale_strs),*],
                 translations: [#(#translations),*],
             };
 
+            #[inline(always)]
             pub const fn localize(translation_key: &str, locale: &str) -> &'static str {
                 Self::TABLE.localize(translation_key, locale)
             }
 
+            #[inline(always)]
             pub const fn get_locale(locale: &str) -> ::localize::LocaleHandle<'static, #num_keys> {
                 Self::TABLE.get_locale(locale)
             }
+
+            #(
+                pub const #locales_upper: ::localize::LocaleHandle<'static, #num_keys> = Self::TABLE.get_locale(#locale_strs);
+            )*
         }
     }.into()
 }
